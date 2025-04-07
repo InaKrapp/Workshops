@@ -1,0 +1,118 @@
+---
+title: "Research with R Markdown"
+author: "Ina Krapp"
+date: "2025-04-07"
+output: ioslides_presentation
+bibliography: Cherry_blossoms.bib
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## What is R Markdown?
+
+R Markdown, like the newer and closely related QuartoMarkdown, is a more flexible alternative to Latex, Word and PowerPoint - or an expansion.
+
+What it can do:
+
+-   Scientific papers, presentations...
+-   Books, interactive websites...
+-   Apps, videos..
+
+## Necessary installations:
+
+To follow along this workshop, you need to install:
+
+-   [R](https://cran.r-project.org/)
+
+-   [RStudio](https://posit.co/downloads/) (The free version is entirely sufficient)
+
+-   Latex.
+    I recommend to install it as a R package:
+
+````{verbatim}
+```{r}
+install.packages("tinytex")
+tinytex::install_tinytex()
+```
+````
+
+In R Markdown documents, R code is always displayed in grey boxes like this.
+The code above first downloads the R package that connects R to Latex, then it downloads Latex itself.
+
+## How to run code:
+
+[<img src="RStudio.png" width="600"/>](RStudio.png)
+
+Once you started RStudio, you can run code.
+In the lower left pane, an R console is open.
+Now, you can run the code from the previous slide to install tinytex.
+
+## How to use rticles:
+
+'rticles' is a library with templates for scientific articles.
+Install it with the following command:
+
+````{verbatim}
+```{r}
+install.packages("rticles")
+```
+````
+
+Then, open a new document.
+File -\> New File -\> R Markdown -\> From Template
+
+For this workshop, we will look at the template for American Economics Association journals.
+If you selected it and clicked 'OK', a new document will open.
+
+For people who know Latex, this will look familiar - although this is an R Markdown document, it mostly contains Latex code.
+
+## Latex in R Markdown:
+
+An R Markdown document 'understands' most Latex code. It will render a formula like
+
+```{verbatim}
+$y_{ij} = x_{ij}\beta_1 + x_{ij}^2\beta_2 + \epsilon$
+```
+
+as: $y_{ij} = x_{ij}\beta_1 + x_{ij}^2\beta_2 + \epsilon$.
+
+Each R Markdown document starts with a Yaml header (seperated by `` `---` `` from the rest of the document). Latex packages can be added by inserting the following code into the Yaml header:
+
+```{verbatim}
+header-includes: 
+ - \usepackage{graphicx}
+```
+Take care: Yaml is sensitive in regards to indentations.
+
+## Adding a bibliography:
+
+Latex users will already be familiar with bibliography files ending on '.bib'.
+They can be added to the Yaml header, too:
+
+```{verbatim}
+bibliography: Cherry_blossoms.bib
+```
+
+You can cite by naming the key of a paper like `@aonoClarifyingSpringtimeTemperature2010` and it will appear in the text as: @aonoClarifyingSpringtimeTemperature2010.
+
+A bibliography of all sources cited in the text is automatically created at the end of the document.
+
+If you do not have a '.bib'-file yet, you can generate it in all common citation management programmes like Zotero and Citavi.
+
+## Here is the bibliography:
+
+::: {#refs}
+:::
+
+## Next steps:
+
+Now we know the basics of how to write a paper in R Markdown.
+But what truly makes it powerful is that you can run a scientific analysis in the same document that will become your research paper.
+
+It is also easy to set up this analysis in a way that anyone can reproduce it.
+In the next step, we will conduct a reproducible research project analyzing the times when cherry blossoms bloom in Japan.
+
+To follow along, you can download all needed files on my
+[Github Account](https://github.com/InaKrapp/Workshops/tree/main/Writing%20Papers%20in%20RMarkdown). You will need the files 'Reproduceable Research with R Markdown.Rmd', 'Cherry_blossoms.bib' and 'RStudio.png' and place them all in the same directory for the code to run correctly.
