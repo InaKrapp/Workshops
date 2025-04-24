@@ -1,0 +1,423 @@
+---
+title: "Making Maps in R"
+author: "Ina Krapp"
+date: "2025-03-11"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(sf)
+library(tidyverse)
+library(units)
+```
+
+## What is spatial data?
+Spatial data is every type of data which contains some sort of location information: Coordinates, addresses or data such as the GDP of different countries. Many datasets are inherently spatial, and any spatial data can be visualized on maps.
+
+Today, we will look how population can be depicted on a world map. For that, we first need a world map.
+
+## Download Natural Earth data
+A good starting point for working with spatial Data is the Natural Earth Dataset. Download the countries of the world here: https://www.naturalearthdata.com/downloads/10m-cultural-vectors/
+
+This downloaded folder contains a shapefile - an unfortunately fairly complex, but common form of geodata. Each shapefile consists of a folder with several files with different endings (dbf, shp ect..) within.
+It can be loaded into R with the following command:
+
+```{r}
+countries <- st_read("ne_10m_admin_0_countries/ne_10m_admin_0_countries.shp")
+```
+Some first notes:
+1. In sf, geodata is data like any other - you can look at and treat it like a table. Klick on 'countries' in the upper right pane to see that.
+2. It is also read into R like any other dataset: Choose a name for the dataset, create an arrow pointing to it and enter the name of the file to be read into the read-function.
+read-functions with exactly the same pattern exist for nearly all common data formats in R: csv, xlsx, dta and so on.
+3. This geodata has a geodetic crs: 'Geodetic CRS:  WGS 84'. CRS (Coordinate Reference Systems) are a special property of geodata.
+The earth itself is three-dimensional. To depict geodata on a two-dimensional map, the crs is needed to tell how the data can be 'flattened'.
+
+We won't need all values in the data, we will only use the population density and the geodata. Below, we select the columns we want to keep:
+```{r}
+countries = countries %>% select(NAME, POP_EST, geometry)
+```
+
+
+A first map can be created with the following command:
+
+```{r}
+ggplot() +
+  geom_sf(data = countries)
+```
+This may already look like a familiar world map to you.
+But maybe you've also seen others. Like this one:
+```{r}
+ggplot() +
+  geom_sf(data = countries) +
+  coord_sf(crs = "ESRI:54030")
+```
+This map uses the same geodata, but assigned another crs to it. There are many crs one might use - they are all listened on (EPSG.io)[https://epsg.io/]. It are several thousand in total, but many are used to create maps for specific areas of the world (for example, Western Europe or Eastern Africa). These local maps are very accurate.
+Worldwide projections on the other hand unfortunately have to sacrifice some part of the data accuracy - either the area of countries gets displayed wrongly, the distance between places, or something else.
+
+The projection above, the Robinson projection, makes a 'comprise' - neither area nor the relations between countries are depicted entirely correctly, but the errors are not too extreme anywhere.
+
+Other projections may be less familiar to you. 
+```{r}
+ggplot() +
+  geom_sf(data = countries) +
+  coord_sf(crs = "ESRI:102016")
+```
+
+We will continue to use the Robinson projection. To change the crs of a dataset permanently, you can reproject the data with the following code:
+
+```{r}
+countries <- st_transform(countries, crs = "ESRI:54030")
+```
+Note that when we look up the crs, it changed:
+```{r}
+st_crs(countries)
+```
+# Sidenote 1 - Why do I have to choose a projection?
+The earth is a nearly perfectly round sphere. Trying to depict its surface on a two-dimensional picture (a map) will always lead to distortions. There is no such thing as a single right projection - so the choice which one to use always falls to the individual user.
+
+You could decide to go with the default projection (usually, geodata already has a registered projection). But this may not always be a smart choice. Especially, you have to be aware of the difference between projected and geographic data. Some operations (for example, calculating the area of a country), may not work in geographical or projected formats (which of the two will fail depends on the dataset). So in this case, reproject the data.
+
+# Adding population:
+
+The maps above are still empty and not very informative. But the countries dataset also contains information on the population size of countries. We can use this to color the countries depending on how many inhabitants they have.
+
+Note that 'fill' is defined inside 'aes'. 'aes' stands for aesthetics. This code is used to define that a given parameter (here: fill color) should be connected to a given variable (here: The population estimate).
+```{r}
+ggplot() +
+  geom_sf(data = countries, aes(fill = POP_EST))
+```
+
+This is more informative now, telling us that China and India have by far the largest populations. But the differences to the other countries in absolute terms are so large that the differences between, f.eg., EU countries are not well visible anymore.
+
+We can modify the countries dataset to contain a population variable in which we manually categorize countries according to their population: Above 1 billion, above 100 million, above 10 million and so on.
+```{r}
+countries <- countries %>% mutate(population = cut(POP_EST, breaks = c(10^3, 10^4, 10^5, 10^6, 10^7, 10^8, 10^9, 2 * 10^9)))
+
+countries$population <- factor(countries$population, ordered = TRUE)
+```
+
+Now, the map looks very different. Note that the default color scheme has changed: It used to be a continuous scale with shades of blue, now its range goes from violet to yellow. This is because R automatically takes different color palettes depending on characteristics of the displayed variable. 
+```{r}
+ggplot() +
+  geom_sf(data = countries, aes(fill = population))
+```
+Modifying data like this is very common in map-making, to avoid cases where outliers dominate the visual appearance of a map. 
+
+However, one has to be careful with it: If the categories are not correctly defined, data may not be depicted. For example, if a country had more than 1 billion inhabitants, but the categories only go up to 1 billion, then this country would be registered to have 'missing data' in the map.
+
+It can be used to present data in a very manipulative way. For example, one more cutoff value can be added to put China into an isolated category:
+```{r}
+countries <- countries %>% mutate(population_cut = cut(POP_EST, breaks = c(10^3, 10^4, 10^5, 10^6, 10^7, 10^8, 10^9, 1366417755, 2 * 10^9)))
+
+countries$population_cut <- factor(countries$population_cut, ordered = TRUE)
+
+ggplot() +
+  geom_sf(data = countries, aes(fill = population_cut))
+```
+In the data, China and India have populations of nearly equal sizes (between 1.3 and 1.4 billion). However, the above map suggests that China's population is significantly larger.
+A closer look on the legend reveals the cutoff value that causes this. However, a good map should be intuitive and readable at first glance. And the cutoffs should follow an easily understandable pattern.
+
+## Sidenote 2 - Why do cartographers rarely use red?
+Maybe you already noticed that all color ranges we've seen so far didn't include red.
+Modern maps, at least good quality maps, rarely use it. There are two main reasons for it.
+1. Symbolism: Red is associated with danger. It is not an issue when displaying obviously negative data, like, for example, traffic accidents. But for most other maps, more neutral colors are preferred.
+2. Some people (including around 8% of all men) can not distinguish between Green and Red. To ensure maps are readable to them, using red-green color ranges is avoided.
+There are even color scales specifically designed to be as readable as possible for people with colorblindness, or if they are printed out greyscale. The one used above is one of them, it is named 'viridis'.
+
+## Making the map prettier
+The countries' color range is looking fairly good now. But the overall appearance of the plot is not very pretty (I don't know a single person which likes the grey default background...)
+
+ggplot graphics can be modified very precisely. But that tends to make the code very long. So we will do this stepwise.
+First, we will save the previously created map as an object named 'worldmap'.
+
+```{r}
+worldmap <- ggplot() +
+  geom_sf(data = countries, aes(fill = population))
+```
+We can depict it again by simply writing its name
+```{r}
+worldmap
+```
+Now, we can add more elements: 
+
+ggplot contains a number of themes which define background color and some other visual aspects of the graphics. Let's use theme_minimal for our project.
+```{r}
+worldmap <- worldmap + theme_minimal()
+worldmap
+```
+
+Let's add a title and a legend title:
+```{r}
+worldmap <- worldmap + labs(title = "World population by country:", fill = "Population:")
+worldmap
+```
+Modify the labels so they are easier to read:
+
+```{r}
+worldmap <- worldmap + scale_fill_viridis_d(labels = c("> 1000", "> 10.000", "> 100.000", "> 1 Million", "> 10 Million", "> 100 Million", "> 1 Billion", "No Data"))
+worldmap
+```
+
+#Sidenote 3 - The container room trap
+So far, we created the map following what geographers call a 'container room' perception - we treat the countries as mutually exclusive and collectively exhaustive areas on the map, and each area gets a color that represents a value (here, the population).
+
+But a map based on this concept is highly sensitive towards changes in the definition of these 'containers'. And the definition is not straightforward. What are the 'containers' here? It are countries, it are not states.
+
+People tend to think that 'nation', 'state' and 'country' are more or less interchangeable terms. But in some contexts, they are not. 
+Greenland, for example, is a nation within the state of Denmark. 
+
+The code below takes all three danish nations, combines them into a single row and adds them back to the dataframe. 
+```{r}
+# Define the list of danish nations:
+Denmark <- c("Greenland", "Faeroe Is.", "Denmark")
+
+# Subset the dataframe to include only danish countries
+Denmarkboundaries <- countries %>%
+  filter(NAME %in% Denmark)
+countries <- countries %>% filter(!(NAME%in% Denmark))
+
+# Calculate the sum of danish population numbers
+POP_EST <- sum(Denmarkboundaries$POP_EST, na.rm = TRUE)
+
+# Combine the country's areas (geometry) into a single area
+Denmarkaggregated <- st_union(Denmarkboundaries$geometry)
+
+# Create a new sf object with the aggregated area and summed value
+Denmarkaggregated_sf <- st_sf(geometry = Denmarkaggregated, POP_EST = POP_EST, NAME = "Denmark")
+
+# Set the same CRS as the original boundaries
+Denmarkaggregated_sf <- st_set_crs(Denmarkaggregated_sf, st_crs(countries))
+
+# Add back to the dataframe:
+countries <- countries %>% select(NAME, POP_EST)
+countries <- rbind(countries, Denmarkaggregated_sf)
+
+# Recreate population variable:
+countries <- countries %>% mutate(population = cut(POP_EST, breaks = c(10^3, 10^4, 10^5, 10^6, 10^7, 10^8, 10^9, 2 * 10^9)))
+countries$population <- factor(countries$population, ordered = TRUE)
+```
+
+Now, the map looks different:
+```{r}
+worldmap <- ggplot() +
+  geom_sf(data = countries, aes(fill = population)) +
+  theme_minimal()
+worldmap
+```
+It appears as if Greenland had the same population density as the rest of Denmark. 
+
+Some geographers generally oppose the depiction of absolute values on maps like this because the definition of the areas can easily distort data. They favor relative values like population density - population divided by area.
+
+We can calculate population density:
+
+```{r}
+# st_area gives the area of countries
+countries$area <- st_area(countries)
+
+# The result is in square meters, we convert to square kilometers
+countries$area <- set_units(countries$area, "km^2")
+
+# Calculate population density - people per square kilometer:
+countries$pop_density <- as.numeric(countries$POP_EST / countries$area)
+
+# Create categories:
+countries <- countries %>% mutate(pop_density = cut(pop_density, breaks = c(0, 1, 10, 100, 1000, 10000)))
+countries$pop_density <- factor(countries$pop_density, ordered = TRUE)
+```
+
+This is the resulting map:
+```{r}
+worldmap <- ggplot() +
+  geom_sf(data = countries, aes(fill = pop_density)) +
+  theme_minimal()
+worldmap
+```
+As you can see, population density and population size can vary considerably: Russia has nearly the same number of inhabitants as Bangladesh, but its population density is much lower.
+
+Regardless of the values depicted, container room concepts still have a major flaw:
+They generally obscure differences within the regarded areas, and they emphasize, sometimes overemphasize, differences along borders.
+For actual research projects, it is therefore always recommended to get data on the smallest possible scale. Aggregating it by country risks introducing inaccuracies. Unfortunately, many datasets are only created along administrative boundaries, at county or even country level. But this is starting to change.
+
+## Where do people live? A tale of countries and cities
+
+In reality, of course, the population within countries is distributed very unevenly.
+A large part of the world's population lives in cities. Under the same link under which we downloaded the country boundaries, Natural Earth also contains a dataset named 'populated places', which contains cities and also some smaller populated villages. Download it and load it like the data before.
+```{r}
+populated <- st_read("ne_10m_populated_places/ne_10m_populated_places.shp")
+
+# Keep only columns we need:
+populated <- populated %>% select(ADM0CAP, POP_MIN, NAME)
+# Remove villages with no population:
+populated <- populated %>% filter(POP_MIN > 0)
+# ADM0CAP states if a city is a capital or not. Turn it into a factor:
+populated$ADM0CAP <- factor(populated$ADM0CAP, levels = c(1, 0))
+```
+As you can see, this dataset also has the CRS 'WSG 84'.
+However, it contains a different form of spatial data.
+In the 'countries' dataset, each country is represented using a polygon.
+In the populated-places-dataset, each populated place is represented through a point. Points behave differently from polygons.
+We can map the datasets together to see that:
+
+```{r}
+ggplot() +
+  geom_sf(data = countries) +
+  geom_sf(data = populated)
+```
+
+A point is only defined through a pair of x and y-coordinates. It has no area.
+A polygon is created in sf by connecting several points, creating an area between them.
+Countries are represented as a list of polygons (a country may have more than one polygon if it, for example, includes islands). You can see by closely inspecting the geometry column that they are also defined by coordinates, but these coordinates are arranged in a special manner. Each single polygon contains several coordinate pairs and starts with the same value with which it ends.
+
+Points can also have colors assigned to them. Unlike polygons, which have a fixed area, the size of points can be modified. 
+
+Point size can, like color, be connected to a variable by putting in the 'aes' argument. In the map below, I use this to depict how many people live in each city.
+The 'scale_size' code controls which size range should be used. I also made the points slightly transparent ('alpha' modifies transparency) and colored them blue.
+Alpha always takes on a level between 0 (invisible, completely transparent) and 1 (completely intransparent).
+
+```{r}
+ggplot() +
+  geom_sf(data = countries) +
+  geom_sf(data = populated, aes(size = POP_MIN), color = "lightblue", alpha = 0.5) +
+  scale_size(range = c(0.1, 5))
+```
+Now, a pattern becomes visible. The US, for example, is clearly more densely populated than Canada. Eastern China is more densely populated than Western China. And in many regions, the coast appears to be especially densely populated.
+
+Also note that even in countries like the US, non-populated places exist between the towns and cities: Humans may still be active there (f.eg. as visitors or workers), but they don't permanently live there.
+
+This map, too, contains certain implications that one should be aware of. For example, where cities are directly bordering on each other, it is sometimes questionable if one should continue to treat them as two distinct population centers or start to treat them as a single one. They may have distinct administrations, but in the daily life of people, they may be treated as a single larger city. Also, cities are displayed as points here, but of course, in the real world, they also have an area. All maps contain simplifications - which ones are acceptable depends on the purpose. For a World Map, depicting cities as points is obviously less an issue than it would be for a map of a small region.
+
+Although they are called 'points', we can use different shapes to depict this type of data. Below, I use squares. Shapes in ggplot are numbered. You can look up in the documentation which shape has which number: https://ggplot2.tidyverse.org/reference/scale_shape.html
+
+The variable 'AMD0CAP' can take on two values (capital or not). We can use it to modify the color depending on if a city is a capital or not. The code below depicts capitals in red, other cities in blue. 
+```{r}
+ggplot() +
+  geom_sf(data = countries) +
+  geom_sf(
+    data = populated, # Color of the points depends on ADM0CAP
+    aes(size = POP_MIN, color = ADM0CAP), alpha = 0.5, shape = 18
+  ) +
+  scale_size(range = c(0.1, 5))
+```
+
+The map above gives some new insights. As can be seen, many large cities are also the capitals of their countries. But there are exceptions: Australia has a very small capital city compared to many other countries. Sometimes, this is intentional city planning (Brazil, Pakistan, India and Australia all have cities which were founded to become their capitals).
+
+Let's add the names of some large cities. For this, we pick some cities from the dataset and only assign labels to these cities. If we named all cities, the map would quickly become unreadable.
+```{r}
+citynames = populated %>% filter(NAME %in% c("Tokyo", "Mexico City", "Paris", "Cairo", "São Paulo", "Jakarta", "New York", "Kinshasa", "Mumbai"))
+
+ggplot() +
+  geom_sf(data = countries) +
+  geom_sf(
+    data = populated, # Color of the points depends on ADM0CAP
+    aes(size = POP_MIN, color = ADM0CAP), alpha = 0.5, shape = 18
+  ) +
+  scale_size(range = c(0.1, 5))+ geom_sf_label(aes(label = NAME), size = 2, data = citynames)
+```
+
+
+In a last step, we will improve the visual appearance of this map again.
+This time, we use manual colors to color countries green, capitals yellow and other cities violet. One can define them in R using the hexadecimal system. Predefined names for some colors (like black) exist as well.
+
+```{r}
+ggplot() + # Color all countries green with black borders
+  geom_sf(data = countries, fill = "#40bd72", color = "black") +
+  geom_sf(data = populated, aes(size = POP_MIN, color = ADM0CAP), alpha = 0.5) +
+  scale_colour_manual(values = c("#fada24", "#481b6d"), labels = c("Yes", "No")) +
+  scale_size(
+    range = c(0.1, 5), # Define which city sizes are shown in legend
+    breaks = c(0, 10000, 1000000, 10000000),
+    labels = c("0", "10.000", "1 Million", "10 Million"),
+    name = "Population:"
+  ) + geom_sf_label(aes(label = NAME), size = 2, data = citynames)+ # Add theme
+  theme_minimal() +labs(y = "", x = "")+ # Add title, data source and legend titles
+  labs(title = "World population: Populated places", size = "Population:", color = "Capital:", caption = "Source: Own visualization, based on Natural Earth Countries and Populated Places datasets.") + # Center the title:
+  theme(plot.title = element_text(hjust = 0.5)) + # Modify legend
+  guides(colour = guide_legend(override.aes = list(size = 5, alpha = 1)), size = guide_legend(override.aes = list(alpha = 1)))
+```
+
+This is already looking nice, but I'd like to color the areas of the world that are not covered by countries (i.e. the oceans) blue. Unfortunately, because the projection as a whole is not rectangular, this is not entirely straightforward.
+
+The code below first creates a rectangle with the extent of a standard world map.
+st_transform is them used to change the shape into the shape of a Robinson world map.
+
+```{r}
+
+# Create a box we will use as a background in our map:
+box <- data.frame(
+  lon = c(
+    rep(-180, 180), seq(-180, 180, length.out = 100),
+    rep(180, 180), seq(180, -180, length.out = 100)
+  ),
+  lat = c(
+    seq(-90, 90, 1), rep(90, 99),
+    seq(90, -90, -1), rep(-90, 99)
+  )
+) 
+
+box = box %>%
+  st_as_sf(coords = c("lon", "lat"), crs = 4326) %>%
+  summarise(geometry = st_combine(geometry)) %>%
+  st_cast("POLYGON")
+
+# Look at the created box object:
+ggplot() +
+  geom_sf(data = box, fill = "aliceblue", col = "black", linewidth = 0.5)
+
+# Apply the Robinson projection:
+box = box  %>%
+  st_transform("ESRI:54030")
+
+
+# Look at the created box object again:
+ggplot() +
+  geom_sf(data = box, fill = "aliceblue", col = "black", linewidth = 0.5)
+```
+
+Now, we can add it as background to our ggplot worldmap. Also note that the order of elements matters in ggplot: Each new element is added above the previously existing ones.
+```{r}
+ggplot() +
+  geom_sf(data = box, fill = "aliceblue", color = "black", linewidth = 0.5) + # Color all countries green with black borders
+  geom_sf(data = countries, fill = "#40bd72", color = "black") +
+  geom_sf(data = populated, aes(size = POP_MIN, color = ADM0CAP), alpha = 0.5) +
+  scale_colour_manual(values = c("#fada24", "#481b6d"), labels = c("Yes", "No")) +
+  scale_size(
+    range = c(0.1, 5), # Define which city sizes are shown in legend
+    breaks = c(0, 10000, 1000000, 10000000),
+    labels = c("0", "10.000", "1 Million", "10 Million"),
+    name = "Population:"
+  ) + geom_sf_label(aes(label = NAME), size = 2, data = citynames)+ # Add theme
+  theme_minimal() +labs(y = "", x = "")+ # Add title, data source and legend titles
+  labs(title = "World population: Populated places", size = "Population:", color = "Capital:", caption = "Source: Own visualization, based on Natural Earth Countries and Populated Places datasets.") + # Center the title:
+  theme(plot.title = element_text(hjust = 0.5)) + # Modify legend
+  guides(colour = guide_legend(override.aes = list(size = 5, alpha = 1)), size = guide_legend(override.aes = list(alpha = 1)))
+```
+
+There are many, many more things one could add (roads, railroads, buildings...), but space on a single map is limited. One should not try to cram too much into it.
+
+Time to export the result. The preview of maps in RStudio only has a low resolution, but the resolution of the saved object will be much better.
+```{r}
+ggsave("Worldmap.pdf")
+```
+ggsave saves the last created ggplot graph. 
+
+Typically, the default values of ggsave are quite good, but it is possible to define
+custom width and height. One can increase the resolution further by changing the dpi. One can also simply change the file ending to create another file type.
+```{r}
+ggsave("Worldmap.png", dpi = 500, width = 10, height = 7)
+```
+
+Note that unlike PDF, which has a white background, PNG includes transparent areas.
+These transparent areas may appear black, grey or white depending on the program
+in which you open the PNG.
+
+## Literature
+
+There are many free books available online to learn more about R.
+To learn more about the aspects addressed in this tutorial, I recommend:
+
+On graphics with ggplot: https://ggplot2-book.org/
+On importing, modifying and working with data in R: https://r4ds.hadley.nz/
+On working with spatial data, especially the coordinate reference system: https://r.geocompx.org/reproj-geo-data
