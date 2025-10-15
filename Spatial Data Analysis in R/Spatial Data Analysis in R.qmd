@@ -80,10 +80,10 @@ The Consistent and Corrected Nighttime Light dataset (CCNL) from DMSP‑OLS prov
 
 We will use the data from 2013.
 
-This is a tif file: An image with very high resolution.
+This is a tif file: An image with very high resolution.+
 
 ```{r}
-img <- rast("CCNL_DMSP_2013_V1.tif")
+img <- rast(here("CCNL_DMSP_2013_V1.tif"))
 plot(img)
 ```
 
@@ -257,9 +257,9 @@ Our cities dataset does not perfectly capture where people live: While it gives 
 Again, we will be working with tif images. This time, we will be using 2015 population estimates from the WorldPop project: <https://hub.worldpop.org/geodata/summary?id=74005> <https://hub.worldpop.org/geodata/summary?id=74021>
 
 ```{r, results = 'hide', messages = FALSE}
-img_north <- rast("prk_pop_2015_CN_100m_R2025A_v1.tif")
+img_north <- rast(here("prk_pop_2015_CN_100m_R2025A_v1.tif"))
 plot(img_north)
-img_south <- rast("kor_pop_2015_CN_100m_R2025A_v1.tif")
+img_south <- rast(here("kor_pop_2015_CN_100m_R2025A_v1.tif"))
 plot(img_south)
 
 # Re‑project them to EPSG:5179
