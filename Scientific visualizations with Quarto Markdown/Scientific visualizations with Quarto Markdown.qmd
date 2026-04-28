@@ -1,0 +1,489 @@
+---
+title: "Scientific visualizations with Quarto Markdown"
+author: "Ina Krapp"
+format: 
+  revealjs:
+    standalone: true
+    embed-resources: true
+editor: 
+  markdown: 
+    wrap: 72
+---
+
+## Scientific visualizations with Quarto Markdown:
+
+**Objective:** In this workshop, we will explore a single dataset from
+three different visual perspectives. We will learn how to:
+
+1.  Visualize a network of connections using `networkD3`.
+
+2.  Plot geographic data on an interactive map with `leaflet`.
+
+3.  Create animated visualizations to show changes over time and
+    simulate flight tracks with `gganimate`.
+
+**Our Topic:** We will be exploring the US domestic air traffic network,
+focusing on flights departing from New York City's three major airports
+in 2013.
+
+------------------------------------------------------------------------
+
+## **Part 0: Setup**
+
+First, let's install the necessary packages and load our data. For this
+workshop, we will use a pre-prepared dataset derived from the
+`nycflights13` package. The dataset contains information on flights
+which departed from the three major airports in New York in 2013.
+
+```{r, echo = TRUE, message = FALSE, results = FALSE}
+# 1. Install the required packages
+#install.packages(c("tidyverse", "networkD3", "leaflet", "gganimate"))
+
+# 2. Load the libraries
+library(tidyverse)
+library(networkD3)
+library(leaflet)
+library(gganimate)
+library(maps)
+
+# Load data
+flights_df <- read.csv("nyc_flights_2013.csv")
+```
+
+## Look at the dataset
+
+```{r, echo = TRUE, results = TRUE}
+# Let's take a quick look at our data
+glimpse(flights_df)
+```
+
+## **Part 1: The Network of Flights (`networkD3`)**:
+
+-   Networks can be used to visualize relationships between people,
+    places, organizations or other entities
+
+-   In flight data: A flight from an origin (e.g. John F. Kennedy
+    Airport in New York) to a destination (e.g. Los Angeles
+    International) can be modeled as a connection.
+
+-   We can model the entire system as a network where airports are
+    *nodes* and routes are *links*. This will help us see the overall
+    structure of the flight network out of NYC.
+
+## Preparing data for a network
+
+**Data Preparation:** `networkD3` requires data in a specific format:
+
+1.  A `nodes` data frame with information about each node (the
+    airports).
+
+2.  A `links` data frame describing the connections, using numerical IDs
+    that correspond to the rows in the `nodes` data frame.
+
+## The Network of flights - nodes:
+
+```{r , echo = TRUE, message = FALSE, results = FALSE}
+# 1. Extract Origin Airport Data (origin_name and tzone_origin)
+origin_airports <- flights_df %>%
+  select(name_col = origin_name, time_col = tzone_origin) %>%
+  # Remove duplicate rows
+  distinct()
+
+# 2. Extract Destination Airport Data (dest_name and tzone_dest)
+destination_airports <- flights_df %>%
+  select(name_col = dest_name, time_col = tzone_dest) %>%
+  # Remove duplicate rows
+  distinct()
+
+# 3. Combine the two datasets into one master list
+nodes <- bind_rows(
+  origin_airports, 
+  destination_airports
+)
+
+# 4. Review the final dataframe structure
+# View the first few rows to confirm
+head(nodes)
+```
+
+## The Network of flights - links:
+
+```{r , echo = TRUE, message = FALSE, results = FALSE}
+
+# 1. Create the 'links' data frame
+# We'll count the number of flights on each route to use as the link weight
+links <- flights_df %>%
+  group_by(origin_name, dest_name) %>%
+  summarise(count = n(),.groups = 'drop')
+
+# 2. Convert airport names (like 'John F Kennedy Intl') to zero-based numeric IDs
+# We use match() to find the position of the airport code in our 'nodes' dataframe. 
+# networkD3 requires IDs to start from 0, so we subtract 1.
+links$source_id <- match(links$origin_name, nodes$name) - 1
+links$target_id <- match(links$dest_name, nodes$name) - 1
+
+
+```
+
+## The datasets for the network:
+
+```{r, echo = TRUE, results = TRUE}
+# Let's see what we created
+head(nodes)
+head(links)
+```
+
+## Visualization of the network - code:
+
+To create a network, the *links* and *nodes* datasets are used. Each
+node gets depicted with a name and a color. networkD3 networks can be
+saved as html.
+
+```{r , echo = TRUE, message = FALSE, results = FALSE}
+# Create the force-directed network plot
+network = forceNetwork(
+  Links = links,
+  Nodes = nodes,
+  Source = "source_id",
+  Target = "target_id",
+  Value = "count",        # Determines the thickness of the link
+  NodeID = "name_col",        # The text to display when hovering over a node
+  Group = "time_col",         # Color nodes by time zone
+  opacity = 0.8,
+  zoom = TRUE,            # Allow zooming
+  fontSize = 12
+)
+# Save network:
+saveNetwork(network = network, file = 'Network_flights.html')
+```
+
+## Visualization of the network:
+
+-   Hover over nodes to see their names.
+-   Drag nodes around to rearrange the layout.
+
+```{r , echo = TRUE, message = FALSE, results = TRUE}
+network
+```
+
+## What the network shows:
+
+**Takeaway:** We can immediately see the major hubs that connect to NYC.
+
+-   Some destinations have very few flights (thin lines), while others
+    are major arteries of the network (thick lines).
+
+-   Since the data contains flights from New York, the three New York
+    airports are at the center of the network.
+
+-   You can also see some airports are the destination of flights from
+    just a single New York airport, while some are destinations of
+    flights from two or all three airports.
+
+## **Part 2: The Geographic View (`leaflet`)**
+
+**Concept:** The network view is great for structure, but it lacks
+spatial context. Where are these airports actually located? A map is the
+perfect tool for this. We'll plot all destination airports on an
+interactive map.
+
+**Data Preparation:** We need a data frame of unique destinations with
+their coordinates and the number of flights they received.
+
+```{r , echo = TRUE, message = FALSE, results = TRUE}
+# Summarise the data to get one row per destination airport
+destinations <- flights_df %>%
+  group_by(dest, dest_name, dest_lat, dest_lon) %>%
+  summarise(flight_count = n(), .groups = 'drop') %>%
+  filter(!is.na(dest_lat)) # Ensure we have valid coordinates
+```
+
+## The dataset for the map:
+
+```{r , echo = TRUE, message = FALSE, results = TRUE}
+head(destinations)
+```
+
+## Visualization of the map - code:
+
+Let's build our map. We'll make the size of each circle proportional to
+the number of flights it received.
+
+```{r , echo = TRUE, message = FALSE, results = TRUE}
+# Create the interactive map
+map = leaflet(data = destinations) %>%
+  addProviderTiles("CartoDB.Positron") %>% # A clean, light-colored base map
+  addCircleMarkers(
+    lng = ~dest_lon,
+    lat = ~dest_lat,
+    radius = ~sqrt(flight_count / 100)+1, # Scale radius to make differences visible
+    color = "#0072B2",
+    stroke = FALSE,
+    fillOpacity = 0.6,
+    # Create a pop-up with information for each airport
+    popup = ~paste(
+      "<b>", dest_name, "</b><br>",
+      "Airport Code: ", dest, "<br>",
+      "Flights from NYC: ", flight_count
+    )
+  )
+```
+
+## Visualization of the map:
+
+```{r , echo = TRUE, message = FALSE, results = TRUE}
+map
+```
+
+## Takeaway:
+
+The map instantly reveals the geographic distribution of flights from
+NYC. We see a heavy concentration on the East Coast and to major cities
+like Chicago, Atlanta, and Los Angeles.
+
+## **Part 3: The Temporal Dimension (`gganimate`)**:
+
+**Concept:** We've seen the network structure and the geography, but
+when do things happen? Let's explore how flight delays change throughout
+the year. An animation is the perfect way to see this pattern unfold.
+
+```{r , echo = TRUE, message = FALSE, results = FALSE}
+# Calculate average departure delay per month
+monthly_delays <- flights_df %>%
+  group_by(month) %>%
+  summarise(avg_delay = mean(dep_delay, na.rm = TRUE))
+
+# Let's create a "month_name" for better labels in our animation
+monthly_delays$month_name <- month.name[monthly_delays$month]
+monthly_delays$month_name <- factor(monthly_delays$month_name, levels = month.name)
+
+```
+
+## Taking a look at the data:
+
+```{r, echo = TRUE, message = FALSE, results = TRUE}
+
+head(monthly_delays)
+```
+
+## Visualization of a line chart - code:
+
+We'll create a line chart that updates for each month of the year.
+
+```{r, echo = TRUE, message = FALSE, results = FALSE}
+# Ensure month_name is a factor in correct chronological order
+# And we need a numeric version of month for transition_reveal to work smoothly
+monthly_delays <- monthly_delays %>%
+  mutate(month_num = as.numeric(month)) 
+
+# 1. Create a static ggplot object
+picture <- ggplot(monthly_delays, aes(x = month_num, y = avg_delay, group = 1)) +
+  geom_line(size = 1.2, color = "darkred") +
+  geom_point(size = 4, color = "darkred") +
+  # We use scale_x_continuous to put the month names back on the numeric axis
+  scale_x_continuous(breaks = 1:12, labels = month.name) +
+  labs(
+    title = 'Average Monthly Departure Delay from NYC in 2013',
+    subtitle = 'Tracking up to: {month.name[as.integer(frame_along)]}', 
+    x = "Month",
+    y = "Average Delay (minutes)"
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+```
+
+## Visualization of a line chart:
+
+```{r, echo = TRUE, message = FALSE, results = FALSE}
+# Take a look at the graph:
+picture
+```
+
+## Animation of a line chart - code:
+
+One can transform a static graph like the one above into an animation
+using a 'transition' function. This function defines how the image above
+is turned into an animation. We use 'transition_reveal', which makes the
+data for months appear sequentially.
+
+```{r, echo = TRUE, message = FALSE, results = TRUE}
+# 2. Add the animation layer
+# transition_reveal allows the line to "grow" along the x-axis
+anim <- picture +                       # Alternative: 
+  transition_reveal(month_num) +   #transition_time(month_num) 
+  ease_aes('linear')
+```
+
+## Visualization of a line chart - Animation:
+
+```{r, echo = TRUE, message = FALSE, results = TRUE}
+anim
+```
+
+## Types of animations:
+
+There are also other transition functions available, such as
+'transition_time', which will make the animation go through time and
+always only show data for the current month. You can replace
+'transition_reveal' by 'transition_time' in the previous code to see the
+difference.
+
+They are intended for different data types and use different ways of
+tracking their status in the animation: 'transition_reveal' allows to
+include 'frame_along' into the animation, as seen above.
+'transition_time' instead allows to track time through 'frame_time'.
+
+## Saving an animation:
+
+-   Animations are pictures which appear in close succession. One can
+    define how many pictures, named 'frames', the final animation should
+    include. The code below generates 100 frames, and then shows ten of
+    them per second - therefore, the video will be 10 seconds long.
+
+-   One can increase width and height simultaneously to increase
+    resolution. But then, the animation will also take longer to render.
+
+-   Using gifski_renderer, an animation can be saved as gif, but this
+    code can not be dynamically run in a presentation, so it is
+    commented out here.
+
+## Saving an animation - code:
+
+```{r, echo = TRUE, message = FALSE, results = TRUE}
+# 3. Render the animation
+# 'nframes': the number of frames generated.
+# 'fps': 'frames per second'
+#animate(anim, nframes = 100, fps = 10, width = 800, height = 400, renderer = gifski_renderer())
+
+# 4. Save the animation
+#anim_save("nyc_flight_delays_line.gif")
+```
+
+## Takeaway:
+
+-   The animation clearly shows a seasonal pattern! Delays are lowest in
+    the fall months and peak during the summer (June, July) and holiday
+    season (December), likely due to weather and increased traffic.
+
+-   Animations are computationally intensive, especially when rendered
+    using a large number of frames and high resolution
+
+## **Part 4: An animated map**
+
+One can animate flights on a map by combining spatial and temporal data:
+In this part, we will simulate flights starting at New York airports
+flying to their destinations.
+
+Working with dates can be involved, so for simplicity, we limit the
+flights to analyse to those who started and landed on the same day
+(those who weren't in the air at midnight).
+
+We will also only take a sample of 20 flights. Animations can be
+challenging for a computer, especially when large datasets are animated,
+so
+
+## Preparing data for animated flights:
+
+```{r, echo = TRUE, message = FALSE, results = TRUE}
+# 1. Prepare the data for movement
+# We need to create a unique ID for each flight and convert times to numeric hours
+flights_moving <- flights_df %>%
+  filter(month == 1, day == 1) %>%
+  mutate(
+    flight_id = row_number(),
+    # Convert HHMM to decimal hours (e.g., 6:30 -> 6.5)
+    dep_time_num = (dep_time %/% 100) + (dep_time %% 100) / 60,
+    arr_time_num = (arr_time %/% 100) + (arr_time %% 100) / 60
+  ) %>%
+  # Filter out flights that don't have arrival times or arrive 'the next day' for simplicity
+  filter(!is.na(arr_time_num), arr_time_num > dep_time_num) %>%
+  head(20) # We take the first 20 flights of the day for performance
+
+# 2. CREATE THE "FLYING" STRUCTURE
+# For every flight, we need a 'Start' row and an 'End' row
+flight_steps <- bind_rows(
+  flights_moving %>% 
+    select(flight_id, time = dep_time_num, lon = origin_lon, lat = origin_lat, carrier, tailnum),
+  flights_moving %>% 
+    select(flight_id, time = arr_time_num, lon = dest_lon, lat = dest_lat, carrier, tailnum)
+) %>%
+  arrange(flight_id, time)
+
+# 3. Get the map background
+us_map <- map_data("state")
+```
+
+## A map of flights - code:
+
+```{r, echo = TRUE, message = FALSE, results = TRUE}
+# 4. Plot the "Flights"
+picture <- ggplot() +
+  # Background Map
+  geom_polygon(data = us_map, aes(x = long, y = lat, group = group), 
+               fill = "#222222", color = "#444444") +
+  # The Flight Paths (the "trails" the planes leave)
+  geom_line(data = flight_steps, 
+            aes(x = lon, y = lat, group = flight_id, color = tailnum), 
+            alpha = 0.3) +
+  # The Planes (the moving dots)
+  geom_point(data = flight_steps, 
+             aes(x = lon, y = lat, color = tailnum), 
+             size = 3) +
+  coord_fixed(1.3) +
+  theme_void() +
+  theme(panel.background = element_rect(fill = "black"),
+        legend.position = "none",
+        plot.title = element_text(color = "white", size = 18, hjust = 0.5),
+        plot.subtitle = element_text(color = "white", size = 14, hjust = 0.5)) +
+  labs(title = "A Day of Flights from NYC",
+       subtitle = "Time: {round(frame_along, 1)}:00")
+```
+
+## A map of flights:
+
+```{r, echo = TRUE, message = FALSE, results = TRUE}
+# Depict map:
+picture
+```
+
+## A map of flights - animated:
+
+```{r, echo = TRUE, message = FALSE, results = TRUE}
+# 5. Animate using transition_reveal
+# transition_reveal(time) tells gganimate to draw the line/point 
+# along the time axis based on the 'flight_id' group
+anim <- picture + 
+  transition_reveal(time) +
+  shadow_wake(wake_length = 0.1, alpha = 0.5) # Adds a "tail" to the plane
+anim
+```
+
+## A map of flights - code to save the animation:
+
+```{r, echo = TRUE, message = FALSE, results = TRUE}
+# 6. Render
+#animate(anim, nframes = 150, fps = 15, width = 800, height = 500, renderer = gifski_renderer())
+
+# 7. Save
+#anim_save("nyc_flying_planes.gif")
+```
+
+Note that with more flights, the animation would quickly become crowded.
+
+## Further literature:
+
+A tutorial on creating graphics with ggplot2:
+<https://datacenter.safe-frankfurt.de/documents/SAFE_webinars/03_ggplot/ggplot_tutorial.html>
+
+All types of network networkD3 can create with R code examples:
+<https://christophergandrud.github.io/networkD3/>
+
+Another text on network analysis:
+<https://bookdown.org/jdholster1/idsr/network-analysis.html>
+
+Mapping with leaflet or mapview in R:
+<https://mapping-in-r-workshop.ryanpeek.org/04_vig_mapview_leaflet>
+
+All functions of gganimate: <https://gganimate.com/reference/index.html>
