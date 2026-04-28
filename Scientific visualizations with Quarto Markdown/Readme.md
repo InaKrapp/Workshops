@@ -4,8 +4,6 @@ This folder contains the materials for the Data Center seminar 'Scientific visua
 
 'Scientific visualizations with Quarto Markdown.html' contains a rendered version of the presentation.
 
-This presentation uses the nycflights13 dataset, which has been modified and uploaded as 'nyc_flights_2013.csv'.
-
-The code to modify it is found in prepare_data.R
+This presentation uses the nycflights13 dataset, the code to prepare it for the workshop it is found in prepare_data.R
 
 
